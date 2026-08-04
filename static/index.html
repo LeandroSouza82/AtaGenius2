@@ -40,24 +40,27 @@
             <section class="card upload-card">
                 <div class="card-header">
                     <h2>Envio dos Arquivos da Reunião</h2>
-                    <p>Selecione ou arraste pelo menos uma foto das anotações ou o áudio gravado.</p>
+                    <p>Selecione ou arraste <strong>uma ou mais fotos</strong> das anotações. As imagens se acumulam em galeria.</p>
                 </div>
 
                 <div class="dropzone-grid">
                     <!-- Dropzone 1: Foto Manuscrita -->
                     <div class="dropzone" id="dropzoneFoto">
-                        <input type="file" id="inputFoto" accept="image/*" class="file-input">
+                        <input type="file" id="inputFoto" accept="image/*" class="file-input" multiple>
                         <div class="dropzone-icon">📷</div>
                         <div class="dropzone-content">
-                            <h3>Foto das Anotações</h3>
-                            <p>Arraste uma foto do quadro ou papel manuscrito</p>
-                            <span class="btn-secondary">Selecionar Imagem</span>
+                            <h3>Fotos das Anotações</h3>
+                            <p>Arraste ou selecione uma ou mais fotos do quadro / papel manuscrito</p>
+                            <span class="btn-secondary">Selecionar Imagens</span>
                         </div>
-                        <div class="file-preview" id="previewFoto" style="display: none;">
-                            <span class="file-name" id="nomeFoto">imagem.jpg</span>
-                            <button type="button" class="btn-remove" id="btnRemoverFoto" title="Remover arquivo">&times;</button>
+                        <div class="file-preview" id="previewFotoCount" style="display: none;">
+                            <span class="file-name" id="contadorFotos"></span>
+                            <button type="button" class="btn-remove" id="btnLimparFotos" title="Limpar todas as imagens">&times;</button>
                         </div>
                     </div>
+
+                    <!-- Galeria de miniaturas das imagens selecionadas -->
+                    <div id="galeriaFotos" class="galeria-fotos" style="display: none;"></div>
 
                     <!-- Dropzone 2: Áudio da Reunião -->
                     <div class="dropzone" id="dropzoneAudio">

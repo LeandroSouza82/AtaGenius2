@@ -70,13 +70,13 @@ Ana Paula Ferreira — Secretária
 """
 
 from gemini_service import processar_ata_multimodal
-from image_service import comprimir_imagem
+from image_service import comprimir_lista_imagens
 from supabase_service import SupabaseService
 
 app = FastAPI(
     title="Gerador de Atas de Reunião com Gemini AI",
     description="Backend de alta performance para conversão de anotações e áudios em atas executivas.",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # Inicializa o serviço do Supabase
@@ -86,6 +86,7 @@ supabase_service = SupabaseService()
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+
 @app.get("/")
 async def serve_index():
     """Servidor da página principal index.html"""
@@ -94,78 +95,91 @@ async def serve_index():
         raise HTTPException(status_code=404, detail="Arquivo index.html não encontrado no diretório static.")
     return FileResponse(index_path)
 
+
 @app.post("/api/gerar-ata")
 async def gerar_ata(
-    foto: Optional[UploadFile] = File(None, description="Foto manuscrita ou do quadro da reunião"),
-    audio: Optional[UploadFile] = File(None, description="Gravação de áudio da reunião")
+    imagens: Optional[list[UploadFile]] = File(None, description="Uma ou mais fotos de anotações manuscritas ou do quadro"),
+    audio: Optional[UploadFile] = File(None, description="Gravação de áudio da reunião"),
 ):
     """
-    Endpoint principal para recebimento dos arquivos e processamento via Gemini 2.5 Flash.
+    Endpoint principal para recebimento dos arquivos e processamento via Gemini 3.5 Flash.
+
+    Aceita múltiplas imagens de anotações e/ou um arquivo de áudio.
+    Todas as imagens são comprimidas automaticamente antes do envio.
+    O áudio é convertido para mono/32kbps quando pydub+ffmpeg estiverem disponíveis.
     A chave de API é carregada automaticamente do arquivo .env pelo gemini_service.
     """
-    bytes_imagem: Optional[bytes] = None
+    lista_bytes_imagens: list[bytes] = []
     bytes_audio: Optional[bytes] = None
     mime_audio: str = "audio/mp3"
 
-    # Processamento da Foto (Compressão via Pillow)
-    if foto and foto.filename:
-        conteudo_foto = await foto.read()
-        if conteudo_foto:
+    # --- Processamento das Imagens (compressão via Pillow) ---
+    if imagens:
+        raw_imagens: list[bytes] = []
+        for upload in imagens:
+            if not upload or not upload.filename:
+                continue
+            conteudo = await upload.read()
+            if conteudo:
+                raw_imagens.append(conteudo)
+
+        if raw_imagens:
             try:
-                bytes_imagem = comprimir_imagem(conteudo_foto, qualidade=60, max_dimensao=1600)
+                lista_bytes_imagens = comprimir_lista_imagens(
+                    raw_imagens, qualidade=75, max_dimensao=1600
+                )
             except Exception as err:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Erro ao comprimir a imagem enviada: {str(err)}"
+                    detail=f"Erro ao comprimir as imagens enviadas: {str(err)}"
                 )
 
-    # Processamento do Áudio
+    # --- Processamento do Áudio ---
     if audio and audio.filename:
         bytes_audio = await audio.read()
         if audio.content_type:
             mime_audio = audio.content_type
 
-    # Validação de recebimento de ao menos UM arquivo válido
-    if not bytes_imagem and not bytes_audio:
+    # --- Validação: ao menos um arquivo válido ---
+    if not lista_bytes_imagens and not bytes_audio:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="É necessário enviar pelo menos uma foto das anotações ou o áudio da reunião."
         )
 
-    # Invocação do Serviço Gemini
+    # --- Invocação do Serviço Gemini ---
     try:
         ata_markdown = processar_ata_multimodal(
-            bytes_imagem=bytes_imagem,
+            bytes_imagens=lista_bytes_imagens if lista_bytes_imagens else None,
             bytes_audio=bytes_audio,
-            mime_audio=mime_audio
+            mime_audio=mime_audio,
         )
     except Exception as _err:
-        # Fallback universal: qualquer falha da API Gemini entrega a ata de demonstração
         print(f"[INFO] Fallback acionado — entregando ata de demonstração. Causa: {_err}")
         return JSONResponse(
             status_code=200,
             content={"sucesso": True, "ata": _ATA_DEMONSTRACAO, "demonstracao": True}
         )
 
-    # Persistência Opcional no Supabase (se configurado)
+    # --- Persistência Opcional no Supabase (se configurado) ---
     try:
         supabase_service.salvar_ata(
             titulo="Ata de Reunião Gerada",
             conteudo_markdown=ata_markdown,
-            metadata={"tem_foto": bool(foto), "tem_audio": bool(audio)}
+            metadata={
+                "qtd_imagens": len(lista_bytes_imagens),
+                "tem_audio": bool(audio),
+            }
         )
     except Exception:
-        # Erro no Supabase não deve travar a resposta para o usuário
         pass
 
     return JSONResponse(
         status_code=200,
-        content={
-            "sucesso": True,
-            "ata": ata_markdown
-        }
+        content={"sucesso": True, "ata": ata_markdown}
     )
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=True)

@@ -9,7 +9,7 @@ try {
     exit 1
 }
 
-$baseDir = "C:\Src\Genius_Atas\Genius_Atas"
+$baseDir = $PSScriptRoot
 
 while ($listener.IsListening) {
     try {

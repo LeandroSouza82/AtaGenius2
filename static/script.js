@@ -2,17 +2,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------------------------------------
     // Referências ao DOM
     // -----------------------------------------------------------------------
-    const inputFoto      = document.getElementById('inputFoto');
-    const dropzoneFoto   = document.getElementById('dropzoneFoto');
-    const previewFoto    = document.getElementById('previewFoto');
-    const nomeFoto       = document.getElementById('nomeFoto');
-    const btnRemoverFoto = document.getElementById('btnRemoverFoto');
+    const inputFoto          = document.getElementById('inputFoto');
+    const dropzoneFoto       = document.getElementById('dropzoneFoto');
+    const previewFotoCount   = document.getElementById('previewFotoCount');
+    const contadorFotos      = document.getElementById('contadorFotos');
+    const btnLimparFotos     = document.getElementById('btnLimparFotos');
+    const galeriaFotos       = document.getElementById('galeriaFotos');
 
-    const inputAudio      = document.getElementById('inputAudio');
-    const dropzoneAudio   = document.getElementById('dropzoneAudio');
-    const previewAudio    = document.getElementById('previewAudio');
-    const nomeAudio       = document.getElementById('nomeAudio');
-    const btnRemoverAudio = document.getElementById('btnRemoverAudio');
+    const inputAudio         = document.getElementById('inputAudio');
+    const dropzoneAudio      = document.getElementById('dropzoneAudio');
+    const previewAudio       = document.getElementById('previewAudio');
+    const nomeAudio          = document.getElementById('nomeAudio');
+    const btnRemoverAudio    = document.getElementById('btnRemoverAudio');
 
     const btnGerar   = document.getElementById('btnGerar');
     const btnText    = btnGerar.querySelector('.btn-text');
@@ -21,63 +22,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultCard = document.getElementById('resultCard');
     const resultBody = document.getElementById('resultBody');
 
-    // Botões da toolbar de exportação
     const btnCopiar   = document.getElementById('btn-copiar');
     const btnWord     = document.getElementById('btn-word');
     const btnImprimir = document.getElementById('btn-imprimir');
     const btnNovaAta  = document.getElementById('btn-nova-ata');
 
+    // -----------------------------------------------------------------------
+    // Estado local: lista acumulada de arquivos de imagem
+    // -----------------------------------------------------------------------
+    /** @type {File[]} */
+    let listaImagens = [];
     let ataGeradaTexto = '';
 
     // -----------------------------------------------------------------------
-    // Drag-and-drop + seleção de arquivos
-    // -----------------------------------------------------------------------
-    setupFileHandler(inputFoto,  dropzoneFoto,  previewFoto,  nomeFoto,  btnRemoverFoto);
-    setupFileHandler(inputAudio, dropzoneAudio, previewAudio, nomeAudio, btnRemoverAudio);
-
-    function setupFileHandler(inputEl, dropzoneEl, previewEl, nameEl, removeBtnEl) {
-        inputEl.addEventListener('change', () => {
-            if (inputEl.files && inputEl.files[0]) {
-                nameEl.textContent = inputEl.files[0].name;
-                previewEl.style.display = 'flex';
-                dropzoneEl.classList.add('active');
-            }
-        });
-
-        ['dragenter', 'dragover'].forEach(ev => {
-            dropzoneEl.addEventListener(ev, e => {
-                e.preventDefault(); e.stopPropagation();
-                dropzoneEl.classList.add('dragover');
-            });
-        });
-
-        ['dragleave', 'drop'].forEach(ev => {
-            dropzoneEl.addEventListener(ev, e => {
-                e.preventDefault(); e.stopPropagation();
-                dropzoneEl.classList.remove('dragover');
-            });
-        });
-
-        dropzoneEl.addEventListener('drop', e => {
-            const files = e.dataTransfer.files;
-            if (files && files.length > 0) {
-                inputEl.files = files;
-                nameEl.textContent = files[0].name;
-                previewEl.style.display = 'flex';
-                dropzoneEl.classList.add('active');
-            }
-        });
-
-        removeBtnEl.addEventListener('click', e => {
-            e.stopPropagation();
-            inputEl.value = '';
-            previewEl.style.display = 'none';
-            dropzoneEl.classList.remove('active');
-        });
-    }
-
-    // -----------------------------------------------------------------------
-    // Alertas
+    // Utilitários de alerta
     // -----------------------------------------------------------------------
     function mostrarErro(msg) {
         alertBox.textContent = msg;
@@ -90,21 +48,181 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -----------------------------------------------------------------------
+    // Galeria de miniaturas das imagens acumuladas
+    // -----------------------------------------------------------------------
+    function atualizarGaleria() {
+        galeriaFotos.innerHTML = '';
+
+        if (listaImagens.length === 0) {
+            galeriaFotos.style.display = 'none';
+            previewFotoCount.style.display = 'none';
+            dropzoneFoto.classList.remove('active');
+            return;
+        }
+
+        // Contador no cabeçalho da dropzone
+        const s = listaImagens.length === 1 ? '' : 's';
+        contadorFotos.textContent = `${listaImagens.length} imagem${s} selecionada${s}`;
+        previewFotoCount.style.display = 'flex';
+        dropzoneFoto.classList.add('active');
+        galeriaFotos.style.display = 'flex';
+
+        listaImagens.forEach((file, index) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'thumb-wrapper';
+
+            const img = document.createElement('img');
+            img.className = 'thumb-img';
+            img.alt = file.name;
+            img.src = URL.createObjectURL(file);
+            // Libera memória quando a imagem for removida do DOM
+            img.onload = () => URL.revokeObjectURL(img.src);
+
+            const label = document.createElement('span');
+            label.className = 'thumb-label';
+            label.textContent = file.name.length > 16
+                ? file.name.slice(0, 13) + '…'
+                : file.name;
+
+            const btnRemove = document.createElement('button');
+            btnRemove.className = 'thumb-remove';
+            btnRemove.title = 'Remover esta imagem';
+            btnRemove.innerHTML = '&times;';
+            btnRemove.addEventListener('click', (e) => {
+                e.stopPropagation();
+                listaImagens.splice(index, 1);
+                // Limpa o input para que os mesmos arquivos possam ser
+                // re-selecionados caso o usuário queira.
+                inputFoto.value = '';
+                atualizarGaleria();
+            });
+
+            wrapper.appendChild(img);
+            wrapper.appendChild(label);
+            wrapper.appendChild(btnRemove);
+            galeriaFotos.appendChild(wrapper);
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Acumulador de imagens — lê FileList e adiciona à lista sem duplicatas
+    // -----------------------------------------------------------------------
+    function acumularImagens(fileList) {
+        const nomeExistentes = new Set(listaImagens.map(f => f.name + f.size));
+        Array.from(fileList).forEach(file => {
+            const chave = file.name + file.size;
+            if (!nomeExistentes.has(chave)) {
+                listaImagens.push(file);
+                nomeExistentes.add(chave);
+            }
+        });
+        atualizarGaleria();
+    }
+
+    // -----------------------------------------------------------------------
+    // Handlers da Dropzone de Foto
+    // -----------------------------------------------------------------------
+    inputFoto.addEventListener('change', () => {
+        if (inputFoto.files && inputFoto.files.length > 0) {
+            acumularImagens(inputFoto.files);
+        }
+    });
+
+    ['dragenter', 'dragover'].forEach(ev => {
+        dropzoneFoto.addEventListener(ev, e => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzoneFoto.classList.add('dragover');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(ev => {
+        dropzoneFoto.addEventListener(ev, e => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzoneFoto.classList.remove('dragover');
+        });
+    });
+
+    dropzoneFoto.addEventListener('drop', e => {
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            acumularImagens(files);
+        }
+    });
+
+    // Limpar toda a galeria
+    btnLimparFotos.addEventListener('click', e => {
+        e.stopPropagation();
+        listaImagens = [];
+        inputFoto.value = '';
+        atualizarGaleria();
+    });
+
+    // -----------------------------------------------------------------------
+    // Handler da Dropzone de Áudio (sem alteração de comportamento)
+    // -----------------------------------------------------------------------
+    function setupAudioHandler() {
+        inputAudio.addEventListener('change', () => {
+            if (inputAudio.files && inputAudio.files[0]) {
+                nomeAudio.textContent = inputAudio.files[0].name;
+                previewAudio.style.display = 'flex';
+                dropzoneAudio.classList.add('active');
+            }
+        });
+
+        ['dragenter', 'dragover'].forEach(ev => {
+            dropzoneAudio.addEventListener(ev, e => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzoneAudio.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(ev => {
+            dropzoneAudio.addEventListener(ev, e => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzoneAudio.classList.remove('dragover');
+            });
+        });
+
+        dropzoneAudio.addEventListener('drop', e => {
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+                inputAudio.files = files;
+                nomeAudio.textContent = files[0].name;
+                previewAudio.style.display = 'flex';
+                dropzoneAudio.classList.add('active');
+            }
+        });
+
+        btnRemoverAudio.addEventListener('click', e => {
+            e.stopPropagation();
+            inputAudio.value = '';
+            previewAudio.style.display = 'none';
+            dropzoneAudio.classList.remove('active');
+        });
+    }
+    setupAudioHandler();
+
+    // -----------------------------------------------------------------------
     // Gerar Ata — chamada ao backend
     // -----------------------------------------------------------------------
     btnGerar.addEventListener('click', async () => {
         ocultarErro();
 
-        const temFoto  = inputFoto.files  && inputFoto.files.length  > 0;
+        const temFotos = listaImagens.length > 0;
         const temAudio = inputAudio.files && inputAudio.files.length > 0;
 
-        if (!temFoto && !temAudio) {
-            mostrarErro('Selecione pelo menos um arquivo (Foto das anotações ou Áudio da reunião).');
+        if (!temFotos && !temAudio) {
+            mostrarErro('Selecione pelo menos uma imagem das anotações ou o áudio da reunião.');
             return;
         }
 
+        // Monta FormData com a chave correta "imagens" (plural) para o FastAPI
         const formData = new FormData();
-        if (temFoto)  formData.append('foto',  inputFoto.files[0]);
+        listaImagens.forEach(img => formData.append('imagens', img));
         if (temAudio) formData.append('audio', inputAudio.files[0]);
 
         setLoadingState(true);
@@ -130,8 +248,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function setLoadingState(isLoading) {
-        btnGerar.disabled   = isLoading;
-        btnText.textContent = isLoading ? 'Processando com AtaGenius AI...' : '⚡ Gerar Ata com AtaGenius';
+        btnGerar.disabled = isLoading;
+        btnText.textContent = isLoading
+            ? 'Processando com AtaGenius AI...'
+            : '⚡ Gerar Ata com AtaGenius';
         spinner.style.display = isLoading ? 'inline-block' : 'none';
     }
 
@@ -169,14 +289,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Tabelas Markdown
         html = converterTabelaMarkdown(html);
 
-        // Quebras de linha → <br> (linhas que não são tags HTML)
+        // Quebras de linha → <br>
         html = html.replace(/\n(?!<[a-z])/g, '<br>');
 
         resultBody.innerHTML = html;
     }
 
     function converterTabelaMarkdown(html) {
-        // Detecta blocos de tabela: linhas separadas por |
         return html.replace(
             /((?:\|.+\|\n?)+)/g,
             (bloco) => {
@@ -185,9 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 let tabelaHtml = '<table>';
                 linhas.forEach((linha, i) => {
-                    // Linha separadora (|---|---|) — pula
                     if (/^\|[\s\-:|]+\|/.test(linha)) return;
-
                     const celulas = linha.split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
                     const tag = i === 0 ? 'th' : 'td';
                     tabelaHtml += '<tr>' + celulas.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
@@ -276,14 +393,17 @@ document.addEventListener('DOMContentLoaded', () => {
         btnNovaAta.addEventListener('click', () => {
             resultCard.style.display = 'none';
 
-            inputFoto.value  = '';
+            // Limpa estado de imagens
+            listaImagens = [];
+            inputFoto.value = '';
+            atualizarGaleria();
+
+            // Limpa áudio
             inputAudio.value = '';
-            previewFoto.style.display  = 'none';
             previewAudio.style.display = 'none';
-            dropzoneFoto.classList.remove('active');
             dropzoneAudio.classList.remove('active');
 
-            ataGeradaTexto       = '';
+            ataGeradaTexto = '';
             resultBody.innerHTML = '';
             ocultarErro();
 
