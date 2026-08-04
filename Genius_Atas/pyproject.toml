@@ -1,0 +1,12 @@
+[tool.ruff]
+select = ["E", "F"]
+ignore = ["E501", "F401", "E402"]
+
+[tool.pyrefly]
+search-path = [
+    "C:/Users/leand/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages"
+]
+python-interpreter = "C:/Users/leand/AppData/Local/Python/pythoncore-3.14-64/python.exe"
+
+[tool.pyrefly.errors]
+missing-import = "ignore"

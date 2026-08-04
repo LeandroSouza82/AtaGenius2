@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AtaGenius | Gerador Inteligente de Atas de Reunião</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- CSS Integrado -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar / Brand Header -->
+        <header class="navbar">
+            <div class="brand">
+                <div class="brand-logo">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <div>
+                    <span class="brand-title">AtaGenius</span>
+                    <span class="badge">IA Multimodal</span>
+                </div>
+            </div>
+            <p class="subtitle">Transforme anotações manuais e áudios brutos em atas executivas impecáveis em segundos.</p>
+        </header>
+
+        <main class="main-content">
+
+
+            <!-- Cards de Upload Multimodal -->
+            <section class="card upload-card">
+                <div class="card-header">
+                    <h2>Envio dos Arquivos da Reunião</h2>
+                    <p>Selecione ou arraste pelo menos uma foto das anotações ou o áudio gravado.</p>
+                </div>
+
+                <div class="dropzone-grid">
+                    <!-- Dropzone 1: Foto Manuscrita -->
+                    <div class="dropzone" id="dropzoneFoto">
+                        <input type="file" id="inputFoto" accept="image/*" class="file-input">
+                        <div class="dropzone-icon">📷</div>
+                        <div class="dropzone-content">
+                            <h3>Foto das Anotações</h3>
+                            <p>Arraste uma foto do quadro ou papel manuscrito</p>
+                            <span class="btn-secondary">Selecionar Imagem</span>
+                        </div>
+                        <div class="file-preview" id="previewFoto" style="display: none;">
+                            <span class="file-name" id="nomeFoto">imagem.jpg</span>
+                            <button type="button" class="btn-remove" id="btnRemoverFoto" title="Remover arquivo">&times;</button>
+                        </div>
+                    </div>
+
+                    <!-- Dropzone 2: Áudio da Reunião -->
+                    <div class="dropzone" id="dropzoneAudio">
+                        <input type="file" id="inputAudio" accept="audio/*" class="file-input">
+                        <div class="dropzone-icon">🎙️</div>
+                        <div class="dropzone-content">
+                            <h3>Áudio da Reunião</h3>
+                            <p>Arraste um arquivo MP3, WAV, M4A ou gravação</p>
+                            <span class="btn-secondary">Selecionar Áudio</span>
+                        </div>
+                        <div class="file-preview" id="previewAudio" style="display: none;">
+                            <span class="file-name" id="nomeAudio">reuniao.mp3</span>
+                            <button type="button" class="btn-remove" id="btnRemoverAudio" title="Remover arquivo">&times;</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-bar">
+                    <button id="btnGerar" class="btn-primary">
+                        <span class="btn-text">⚡ Gerar Ata com AtaGenius</span>
+                        <span class="spinner" style="display: none;"></span>
+                    </button>
+                </div>
+
+                <div id="alertBox" class="alert" style="display: none;"></div>
+            </section>
+
+            <!-- Área de Exibição da Ata Gerada -->
+            <section class="card result-card" id="resultCard" style="display: none;">
+
+                <!-- Cabeçalho do card -->
+                <div class="result-header">
+                    <div>
+                        <h2>Ata de Reunião Gerada</h2>
+                        <span class="status-tag">Sucesso</span>
+                    </div>
+                </div>
+
+                <!-- Barra de Ferramentas de Exportação -->
+                <div class="export-toolbar">
+                    <button id="btn-copiar"    class="export-btn">📋 Copiar Texto</button>
+                    <button id="btn-word"      class="export-btn">📄 Baixar em Word (.doc)</button>
+                    <button id="btn-imprimir"  class="export-btn">🖨️ Imprimir / Salvar PDF</button>
+                    <button id="btn-nova-ata"  class="export-btn export-btn--reset">🔄 Nova Ata</button>
+                </div>
+
+                <!-- Container da Ata — único elemento impresso -->
+                <div class="result-content" id="resultBody">
+                    <!-- O conteúdo formatado em Markdown será inserido aqui via JS -->
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>Desenvolvido com FastAPI, IA Multimodal &amp; Vanilla HTML/CSS/JS</p>
+        </footer>
+    </div>
+
+    <!-- Script Integrado -->
+    <script src="/static/script.js"></script>
+</body>
+</html>
