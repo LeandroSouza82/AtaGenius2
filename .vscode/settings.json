@@ -1,0 +1,21 @@
+{
+  "python.defaultInterpreterPath": "C:/Src/Genius_Atas/.venv-1/Scripts/python.exe",
+  "python.analysis.extraPaths": [
+    "C:/Src/Genius_Atas"
+  ],
+  "python.analysis.exclude": [
+    "**/.venv",
+    "**/.venv/**",
+    "**/.venv-1",
+    "**/.venv-1/**",
+    "**/site-packages/**",
+    "**/.ruff_cache",
+    "**/__pycache__"
+  ],
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticMode": "workspace",
+  "python.linting.enabled": false,
+  "html.validate.html": false,
+  "css.validate": false,
+  "python-envs.defaultEnvManager": "ms-python.python:system"
+}
