@@ -1,3 +1,4 @@
+import contextlib
 import os
 from typing import Optional
 
@@ -161,18 +162,13 @@ async def gerar_ata(
             content={"sucesso": True, "ata": _ATA_DEMONSTRACAO, "demonstracao": True}
         )
 
-    # --- Persistência Opcional no Supabase (se configurado) ---
-    try:
+    # --- Persistencia Opcional no Supabase (silenciosa — nao interrompe o fluxo) ---
+    with contextlib.suppress(Exception):
         supabase_service.salvar_ata(
-            titulo="Ata de Reunião Gerada",
             conteudo_markdown=ata_markdown,
-            metadata={
-                "qtd_imagens": len(lista_bytes_imagens),
-                "tem_audio": bool(audio),
-            }
+            qtd_imagens=len(lista_bytes_imagens),
+            possui_audio=bool(bytes_audio),
         )
-    except Exception:
-        pass
 
     return JSONResponse(
         status_code=200,
@@ -180,6 +176,17 @@ async def gerar_ata(
     )
 
 
+@app.get("/api/historico")
+async def obter_historico():
+    """Retorna a lista das ultimas atas salvas no Supabase."""
+    atas = supabase_service.listar_atas()
+    return JSONResponse(
+        status_code=200,
+        content={"sucesso": True, "atas": atas or []}
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=True)
+

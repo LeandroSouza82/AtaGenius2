@@ -1,0 +1,277 @@
+/* ==========================================================================
+   AtaGenius — Modal de Histórico de Atas
+   Arquivo independente: não altera o style.css principal.
+   ========================================================================== */
+
+/* ── Botão "Histórico" no header ─────────────────────────────────────────── */
+.btn-historico {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 1rem;
+    background-color: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.btn-historico:hover {
+    background-color: rgba(59, 130, 246, 0.12);
+    border-color: var(--border-focus);
+    color: #93c5fd;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+.btn-historico svg {
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+/* ── Linha do header para acomodar o botão ───────────────────────────────── */
+.navbar-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+/* ── Backdrop escuro ─────────────────────────────────────────────────────── */
+.hist-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    z-index: 900;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.hist-backdrop.is-open {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* ── Offcanvas lateral direito ───────────────────────────────────────────── */
+.hist-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(480px, 100vw);
+    background-color: var(--bg-card);
+    border-left: 1px solid var(--border-color);
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
+    z-index: 901;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hist-panel.is-open {
+    transform: translateX(0);
+}
+
+/* ── Cabeçalho do painel ─────────────────────────────────────────────────── */
+.hist-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.hist-panel-header h2 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+}
+
+.hist-panel-header h2 span.hist-count {
+    background-color: rgba(59, 130, 246, 0.18);
+    color: #60a5fa;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.15rem 0.55rem;
+    border-radius: 20px;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.hist-btn-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.35rem;
+    border-radius: var(--radius-sm);
+    line-height: 1;
+    font-size: 1.4rem;
+    transition: color 0.2s, background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.hist-btn-close:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+/* ── Corpo scrollável ────────────────────────────────────────────────────── */
+.hist-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.5rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
+}
+
+.hist-panel-body::-webkit-scrollbar { width: 5px; }
+.hist-panel-body::-webkit-scrollbar-track { background: transparent; }
+.hist-panel-body::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+/* ── Estado vazio ─────────────────────────────────────────────────────────── */
+.hist-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 3rem 1rem;
+    color: var(--text-muted);
+    text-align: center;
+    min-height: 200px;
+}
+
+.hist-empty svg {
+    opacity: 0.35;
+}
+
+.hist-empty p {
+    font-size: 0.875rem;
+}
+
+/* ── Item de ata ─────────────────────────────────────────────────────────── */
+.hist-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    list-style: none;
+}
+
+.hist-item {
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.hist-item:hover {
+    border-color: rgba(59, 130, 246, 0.4);
+    background: rgba(59, 130, 246, 0.04);
+}
+
+.hist-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.hist-item-date {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #60a5fa;
+    letter-spacing: 0.03em;
+}
+
+.hist-item-title {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.4;
+    /* Garante no máximo 2 linhas */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.hist-item-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+/* Botão "Abrir Ata" — azul primário compacto */
+.hist-btn-abrir {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.85rem;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-blue-hover));
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: var(--transition);
+    box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.hist-btn-abrir:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px var(--accent-glow);
+}
+
+/* Botão "Baixar Áudio" — secundário discreto */
+.hist-btn-audio {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.85rem;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.hist-btn-audio:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-primary);
+    border-color: #475569;
+}
+
+/* ── Responsivo ──────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+    .hist-panel {
+        width: 100vw;
+    }
+}

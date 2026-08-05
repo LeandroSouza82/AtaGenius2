@@ -1,3 +1,5 @@
+import { GravadorAssembleia } from '/static/gravador.js';
+
 document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------------------------------------
     // Referências ao DOM
@@ -15,6 +17,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const nomeAudio          = document.getElementById('nomeAudio');
     const btnRemoverAudio    = document.getElementById('btnRemoverAudio');
 
+    const btnGravar          = document.getElementById('btnGravar');
+    const gravarLabel        = document.getElementById('gravarLabel');
+    const gravarTimer        = document.getElementById('gravarTimer');
+    const gravarStatus       = document.getElementById('gravarStatus');
+
     const btnGerar   = document.getElementById('btnGerar');
     const btnText    = btnGerar.querySelector('.btn-text');
     const spinner    = btnGerar.querySelector('.spinner');
@@ -31,8 +38,61 @@ document.addEventListener('DOMContentLoaded', () => {
     // Estado local: lista acumulada de arquivos de imagem
     // -----------------------------------------------------------------------
     /** @type {File[]} */
-    let listaImagens = [];
+    let listaImagens   = [];
     let ataGeradaTexto = '';
+
+    /** @type {Blob|null} Blob do audio gravado pelo GravadorAssembleia */
+    let audioGravado     = null;
+    let nomeAudioGravado = '';
+
+    // Instancia do gravador (singleton reutilizavel)
+    const gravador = new GravadorAssembleia({
+        onPronto(blob, nome, duracaoSeg) {
+            audioGravado     = blob;
+            nomeAudioGravado = nome;
+            const min = String(Math.floor(duracaoSeg / 60)).padStart(2, '0');
+            const seg = String(duracaoSeg % 60).padStart(2, '0');
+            gravarStatus.textContent = `Pronto: ${nome} (${min}:${seg})`;
+            gravarStatus.className   = 'gravar-status ok';
+            gravarTimer.style.display = 'none';
+        },
+        onTick(seg) {
+            const min = String(Math.floor(seg / 60)).padStart(2, '0');
+            const s   = String(seg % 60).padStart(2, '0');
+            gravarTimer.textContent = `${min}:${s}`;
+        },
+        onErro(msg) {
+            gravarStatus.textContent = msg;
+            gravarStatus.className   = 'gravar-status';
+            gravarTimer.style.display = 'none';
+            btnGravar.classList.remove('gravando');
+            gravarLabel.textContent = 'Gravar Reunião';
+        },
+    });
+
+    // Handler do botao Gravar / Parar
+    btnGravar.addEventListener('click', async () => {
+        if (!gravador.gravando) {
+            // --- INICIAR ---
+            audioGravado = null;
+            gravarStatus.textContent = 'Aguardando microfone...';
+            gravarStatus.className   = 'gravar-status';
+            await gravador.iniciar();
+            if (gravador.gravando) {
+                btnGravar.classList.add('gravando');
+                gravarLabel.textContent  = 'Parar Gravação';
+                gravarTimer.style.display = 'inline';
+                gravarTimer.textContent  = '00:00';
+                gravarStatus.textContent = 'Gravando... pode minimizar o app.';
+            }
+        } else {
+            // --- PARAR ---
+            gravador.parar();
+            btnGravar.classList.remove('gravando');
+            gravarLabel.textContent = 'Gravar Reunião';
+        }
+    });
+
 
     // -----------------------------------------------------------------------
     // Utilitários de alerta
@@ -213,7 +273,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ocultarErro();
 
         const temFotos = listaImagens.length > 0;
-        const temAudio = inputAudio.files && inputAudio.files.length > 0;
+        const temAudioArquivo = inputAudio.files && inputAudio.files.length > 0;
+        const temAudioGravado = audioGravado !== null;
+        const temAudio = temAudioArquivo || temAudioGravado;
 
         if (!temFotos && !temAudio) {
             mostrarErro('Selecione pelo menos uma imagem das anotações ou o áudio da reunião.');
@@ -223,7 +285,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Monta FormData com a chave correta "imagens" (plural) para o FastAPI
         const formData = new FormData();
         listaImagens.forEach(img => formData.append('imagens', img));
-        if (temAudio) formData.append('audio', inputAudio.files[0]);
+        if (temAudioArquivo) formData.append('audio', inputAudio.files[0]);
+        else if (temAudioGravado) formData.append('audio', new File([audioGravado], nomeAudioGravado, { type: audioGravado.type }));
 
         setLoadingState(true);
 
@@ -398,10 +461,18 @@ document.addEventListener('DOMContentLoaded', () => {
             inputFoto.value = '';
             atualizarGaleria();
 
-            // Limpa áudio
+            // Limpa audio (arquivo e gravado)
             inputAudio.value = '';
             previewAudio.style.display = 'none';
             dropzoneAudio.classList.remove('active');
+            audioGravado     = null;
+            nomeAudioGravado = '';
+            gravarStatus.textContent = '';
+            gravarStatus.className   = 'gravar-status';
+            gravarTimer.style.display = 'none';
+            if (gravador.gravando) gravador.cancelar();
+            btnGravar.classList.remove('gravando');
+            gravarLabel.textContent = 'Gravar Reunião';
 
             ataGeradaTexto = '';
             resultBody.innerHTML = '';

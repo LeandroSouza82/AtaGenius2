@@ -12,23 +12,33 @@
 
     <!-- CSS Integrado -->
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/modal-historico.css">
 </head>
 <body>
     <div class="app-layout">
         <!-- Sidebar / Brand Header -->
         <header class="navbar">
-            <div class="brand">
-                <div class="brand-logo">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <div class="navbar-top">
+                <div class="brand">
+                    <div class="brand-logo">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="brand-title">AtaGenius</span>
+                        <span class="badge">IA Multimodal</span>
+                    </div>
+                </div>
+                <button type="button" id="btnAbrirHistorico" class="btn-historico" title="Ver Histórico de Atas">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
                     </svg>
-                </div>
-                <div>
-                    <span class="brand-title">AtaGenius</span>
-                    <span class="badge">IA Multimodal</span>
-                </div>
+                    Histórico
+                </button>
             </div>
             <p class="subtitle">Transforme anotações manuais e áudios brutos em atas executivas impecáveis em segundos.</p>
         </header>
@@ -68,7 +78,7 @@
                         <div class="dropzone-icon">🎙️</div>
                         <div class="dropzone-content">
                             <h3>Áudio da Reunião</h3>
-                            <p>Arraste um arquivo MP3, WAV, M4A ou gravação</p>
+                            <p>Arraste um arquivo MP3, WAV, M4A ou use o gravador abaixo</p>
                             <span class="btn-secondary">Selecionar Áudio</span>
                         </div>
                         <div class="file-preview" id="previewAudio" style="display: none;">
@@ -76,6 +86,16 @@
                             <button type="button" class="btn-remove" id="btnRemoverAudio" title="Remover arquivo">&times;</button>
                         </div>
                     </div>
+                </div>
+
+                <!-- Gravador de Áudio Inline -->
+                <div class="gravador-bar" id="gravadorBar">
+                    <button type="button" class="btn-gravar" id="btnGravar" title="Iniciar gravação">
+                        <span class="gravar-icon">⏺</span>
+                        <span class="gravar-label" id="gravarLabel">Gravar Reunião</span>
+                    </button>
+                    <span class="gravar-timer" id="gravarTimer" style="display:none;">00:00</span>
+                    <span class="gravar-status" id="gravarStatus"></span>
                 </div>
 
                 <div class="action-bar">
@@ -119,7 +139,48 @@
         </footer>
     </div>
 
-    <!-- Script Integrado -->
-    <script src="/static/script.js"></script>
+    <!-- Modal / Offcanvas de Histórico -->
+    <div id="histBackdrop" class="hist-backdrop"></div>
+    <div id="histPanel" class="hist-panel">
+        <div class="hist-panel-header">
+            <h2>
+                <span>Histórico de Atas</span>
+                <span class="hist-count" id="histCount">0</span>
+            </h2>
+            <button type="button" id="btnFecharHistorico" class="hist-btn-close" title="Fechar painel">&times;</button>
+        </div>
+        <div class="hist-panel-body">
+            <!-- Estado Vazio (padrão) -->
+            <div id="histEmpty" class="hist-empty">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                <p>Nenhuma ata registrada no histórico.</p>
+            </div>
+            <!-- Lista de Atas (inicialmente oculta/vazia) -->
+            <ul id="histList" class="hist-list" style="display: none;">
+                <!-- Exemplo de estrutura para quando houver dados:
+                <li class="hist-item">
+                    <div class="hist-item-meta">
+                        <span class="hist-item-date">05/08/2026</span>
+                    </div>
+                    <h3 class="hist-item-title">Ata da Reunião</h3>
+                    <div class="hist-item-actions">
+                        <button type="button" class="hist-btn-abrir">Abrir Ata</button>
+                        <button type="button" class="hist-btn-audio">Baixar Áudio</button>
+                    </div>
+                </li>
+                -->
+            </ul>
+        </div>
+    </div>
+
+    <!-- Script do Histórico (independente) -->
+    <script type="module" src="/static/historico.js"></script>
+    <!-- Script Integrado (module para suportar import ES6) -->
+    <script type="module" src="/static/script.js"></script>
 </body>
 </html>

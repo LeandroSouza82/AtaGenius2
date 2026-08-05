@@ -118,7 +118,7 @@ def processar_ata_multimodal(
     bytes_imagens: Optional[list[bytes]] = None,
     bytes_audio: Optional[bytes] = None,
     mime_audio: str = "audio/mp3",
-) -> str:
+) -> str | None:
     """Gera uma ata formal em Markdown a partir de uma lista de imagens e/ou audio."""
 
     # 1. Carregar a chave direto do .env
