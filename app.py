@@ -1,5 +1,7 @@
 import contextlib
 import os
+import struct
+import time
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
@@ -83,6 +85,15 @@ app = FastAPI(
 # Inicializa o serviço do Supabase
 supabase_service = SupabaseService()
 
+# ---------------------------------------------------------------------------
+# Acumulador de blocos de audio fracionados (em memoria, por sessao)
+# Chave: nome_base do audio  |  Valor: dict com metadados e lista de bytes
+# ---------------------------------------------------------------------------
+_BLOCOS_PENDENTES: dict[str, dict] = {}
+
+# Tempo (segundos) sem atividade apos o qual uma sessao de blocos e descartada
+_TTL_BLOCOS = 1800  # 30 minutos
+
 # Monta o diretório estático para os assets do frontend
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -165,7 +176,7 @@ async def gerar_ata(
     # --- Persistencia Opcional no Supabase (silenciosa — nao interrompe o fluxo) ---
     with contextlib.suppress(Exception):
         supabase_service.salvar_ata(
-            conteudo_markdown=ata_markdown,
+            conteudo_markdown=ata_markdown or "",
             qtd_imagens=len(lista_bytes_imagens),
             possui_audio=bool(bytes_audio),
         )
@@ -173,6 +184,150 @@ async def gerar_ata(
     return JSONResponse(
         status_code=200,
         content={"sucesso": True, "ata": ata_markdown}
+    )
+
+
+@app.post("/api/gerar-ata-bloco")
+async def gerar_ata_bloco(
+    audio: UploadFile = File(..., description="Bloco de audio WAV otimizado"),
+    bloco_atual: int  = Form(..., description="Numero do bloco atual (1-based)"),
+    total_blocos: int = Form(..., description="Total de blocos a receber"),
+    duracao_total: float = Form(0, description="Duracao total da gravacao em segundos"),
+    imagens: Optional[list[UploadFile]] = File(None, description="Fotos de anotacoes (somente no primeiro bloco)"),
+):
+    """
+    Recebe blocos fracionados de audio WAV (reunioes longas > 10 min).
+
+    O cliente envia N requisicoes sequenciais — uma por bloco.
+    Os bytes de audio sao acumulados em memoria ate o ultimo bloco chegar,
+    momento em que o audio e concatenado e processado pelo Gemini em uma
+    unica chamada, garantindo coerencia narrativa da ata.
+
+    Blocos orfaos (sessao sem atividade por 30 min) sao descartados
+    automaticamente na proxima requisicao recebida.
+    """
+    # --- Limpeza de sessoes expiradas ---
+    agora = time.time()
+    expirados = [
+        k for k, v in _BLOCOS_PENDENTES.items()
+        if agora - v.get("ts", 0) > _TTL_BLOCOS
+    ]
+    for k in expirados:
+        del _BLOCOS_PENDENTES[k]
+
+    # --- Deriva a chave de sessao a partir do nome do arquivo do primeiro bloco ---
+    # Ex.: "reuniao_20260723_1400_bloco01.wav" -> "reuniao_20260723_1400"
+    nome_arquivo = audio.filename or "audio_bloco"
+    # Remove sufixo "_blocoNN.wav" para obter o nome base
+    partes = nome_arquivo.rsplit("_bloco", 1)
+    chave_sessao = partes[0] if len(partes) == 2 else nome_arquivo
+
+    # --- Inicializa a sessao no primeiro bloco ---
+    if bloco_atual == 1:
+        _BLOCOS_PENDENTES[chave_sessao] = {
+            "blocos":     [],
+            "imagens":    [],
+            "total":      total_blocos,
+            "duracao":    duracao_total,
+            "ts":         agora,
+        }
+
+    sessao = _BLOCOS_PENDENTES.get(chave_sessao)
+    if sessao is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Sessao de blocos nao encontrada para '{chave_sessao}'. "
+                "O bloco 1 deve ser enviado antes dos demais."
+            )
+        )
+
+    # --- Acumula o bloco de audio ---
+    bytes_bloco = await audio.read()
+    if bytes_bloco:
+        sessao["blocos"].append(bytes_bloco)
+    sessao["ts"] = agora
+
+        # --- Acumula imagens (chegam somente no bloco 1) ---
+    if imagens:
+        raw_imgs = []
+        for upload in imagens:
+            if upload and upload.filename:
+                conteudo = await upload.read()
+                if conteudo:
+                    raw_imgs.append(conteudo)
+        if raw_imgs:
+            try:
+                sessao["imagens"] = comprimir_lista_imagens(
+                    raw_imgs, qualidade=75, max_dimensao=1600
+                )
+            except Exception as err:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Erro ao comprimir imagens do bloco 1: {str(err)}"
+                )
+
+    # --- Aguarda o ultimo bloco para processar ---
+    blocos_recebidos = len(sessao["blocos"])
+    if blocos_recebidos < sessao["total"]:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "sucesso":  True,
+                "parcial":  True,
+                "recebidos": blocos_recebidos,
+                "total":    sessao["total"],
+                "ata":      None,
+            }
+        )
+
+    # --- Todos os blocos chegaram: concatena os bytes de audio ---
+    # Os blocos WAV sao PCM 16-bit mono 16kHz — concatena-se apenas os
+    # dados de amostra (pulando o cabecalho de 44 bytes de cada bloco)
+    # e reconstroi um unico cabecalho WAV valido.
+    blocos_bytes: list[bytes] = sessao["blocos"]
+    lista_bytes_imagens: list[bytes] = sessao.get("imagens", [])
+
+    del _BLOCOS_PENDENTES[chave_sessao]  # libera memoria
+
+    # Concatenacao WAV: cabecalho do primeiro bloco + dados de todos os blocos
+    WAV_HEADER = 44
+    dados_pcm = b"".join(b[WAV_HEADER:] for b in blocos_bytes)
+    cabecalho  = bytearray(blocos_bytes[0][:WAV_HEADER])
+
+            # Atualiza tamanho total no cabecalho RIFF (bytes 4-7) e data (bytes 40-43)
+    total_dados = len(dados_pcm)
+    struct.pack_into("<I", cabecalho, 4,  36 + total_dados)
+    struct.pack_into("<I", cabecalho, 40, total_dados)
+
+    bytes_audio_final = bytes(cabecalho) + dados_pcm
+    mime_audio_final  = "audio/wav"
+
+    # --- Processa com Gemini ---
+    try:
+        ata_markdown = processar_ata_multimodal(
+            bytes_imagens=lista_bytes_imagens if lista_bytes_imagens else None,
+            bytes_audio=bytes_audio_final,
+            mime_audio=mime_audio_final,
+        )
+    except Exception as _err:
+        print(f"[INFO] Fallback acionado (blocos) — ata de demonstracao. Causa: {_err}")
+        return JSONResponse(
+            status_code=200,
+            content={"sucesso": True, "ata": _ATA_DEMONSTRACAO, "demonstracao": True}
+        )
+
+    # --- Persistencia opcional ---
+    with contextlib.suppress(Exception):
+        supabase_service.salvar_ata(
+            conteudo_markdown=ata_markdown or "",
+            qtd_imagens=len(lista_bytes_imagens),
+            possui_audio=True,
+        )
+
+    return JSONResponse(
+        status_code=200,
+        content={"sucesso": True, "parcial": False, "ata": ata_markdown}
     )
 
 
