@@ -34,25 +34,42 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnImprimir = document.getElementById('btn-imprimir');
     const btnNovaAta  = document.getElementById('btn-nova-ata');
 
-    // -----------------------------------------------------------------------
+                    // -----------------------------------------------------------------------
     // Estado local: lista acumulada de arquivos de imagem
     // -----------------------------------------------------------------------
     /** @type {File[]} */
     let listaImagens   = [];
     let ataGeradaTexto = '';
 
-    /** @type {Blob|null} Blob do audio gravado pelo GravadorAssembleia */
-    let audioGravado     = null;
-    let nomeAudioGravado = '';
+    /**
+     * Blocos WAV otimizados produzidos pelo GravadorAssembleia.
+     * Array de um unico Blob para gravacoes curtas (<= 10 min) ou
+     * multiplos Blobs para reunioes longas fracionadas.
+     * @type {Blob[]}
+     */
+    let blocosAudioGravado   = [];
+    let nomeBaseAudioGravado = '';
+    let duracaoAudioGravado  = 0;
 
     // Instancia do gravador (singleton reutilizavel)
     const gravador = new GravadorAssembleia({
-        onPronto(blob, nome, duracaoSeg) {
-            audioGravado     = blob;
-            nomeAudioGravado = nome;
+        /**
+         * Disparado apos a pipeline de otimizacao client-side concluir.
+         * @param {Blob[]} blocos    Array de Blobs WAV (1 ou mais blocos)
+         * @param {string} nomeBase  Nome base do arquivo sem extensao
+         * @param {number} duracaoSeg Duracao total gravada em segundos
+         */
+        onPronto(blocos, nomeBase, duracaoSeg) {
+            blocosAudioGravado   = blocos;
+            nomeBaseAudioGravado = nomeBase;
+            duracaoAudioGravado  = duracaoSeg;
+
             const min = String(Math.floor(duracaoSeg / 60)).padStart(2, '0');
             const seg = String(duracaoSeg % 60).padStart(2, '0');
-            gravarStatus.textContent = `Pronto: ${nome} (${min}:${seg})`;
+            const info = blocos.length > 1
+                ? `${blocos.length} blocos • ${min}:${seg}`
+                : `${nomeBase}.wav (${min}:${seg})`;
+            gravarStatus.textContent = `Pronto: ${info}`;
             gravarStatus.className   = 'gravar-status ok';
             gravarTimer.style.display = 'none';
         },
@@ -68,13 +85,20 @@ document.addEventListener('DOMContentLoaded', () => {
             btnGravar.classList.remove('gravando');
             gravarLabel.textContent = 'Gravar Reunião';
         },
+        onOtimizando(msg) {
+            // Exibe progresso da otimizacao client-side no status do gravador
+            gravarStatus.textContent = msg;
+            gravarStatus.className   = 'gravar-status';
+        },
     });
 
-    // Handler do botao Gravar / Parar
+        // Handler do botao Gravar / Parar
     btnGravar.addEventListener('click', async () => {
         if (!gravador.gravando) {
             // --- INICIAR ---
-            audioGravado = null;
+            blocosAudioGravado   = [];
+            nomeBaseAudioGravado = '';
+            duracaoAudioGravado  = 0;
             gravarStatus.textContent = 'Aguardando microfone...';
             gravarStatus.className   = 'gravar-status';
             await gravador.iniciar();
@@ -86,10 +110,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 gravarStatus.textContent = 'Gravando... pode minimizar o app.';
             }
         } else {
-            // --- PARAR ---
+            // --- PARAR: desabilita botao durante otimizacao para evitar double-click ---
             gravador.parar();
+            btnGravar.disabled = true;
             btnGravar.classList.remove('gravando');
-            gravarLabel.textContent = 'Gravar Reunião';
+            gravarLabel.textContent  = 'Otimizando...';
+            gravarTimer.style.display = 'none';
+            gravarStatus.textContent = 'Otimizando audio...';
+            // O botao e reabilitado quando onPronto ou onErro forem disparados
+            // Usamos um MutationObserver pontual para detectar a mudanca de status
+            const observador = new MutationObserver(() => {
+                const statusAtual = gravarStatus.textContent;
+                const concluido = gravarStatus.classList.contains('ok')
+                    || statusAtual === ''
+                    || statusAtual.startsWith('Erro');
+                if (concluido) {
+                    btnGravar.disabled      = false;
+                    gravarLabel.textContent = 'Gravar Reunião';
+                    observador.disconnect();
+                }
+            });
+            observador.observe(gravarStatus, { childList: true, characterData: true, subtree: true, attributes: true });
         }
     });
 
@@ -272,33 +313,81 @@ document.addEventListener('DOMContentLoaded', () => {
     btnGerar.addEventListener('click', async () => {
         ocultarErro();
 
-        const temFotos = listaImagens.length > 0;
-        const temAudioArquivo = inputAudio.files && inputAudio.files.length > 0;
-        const temAudioGravado = audioGravado !== null;
-        const temAudio = temAudioArquivo || temAudioGravado;
+                        const temFotos        = listaImagens.length > 0;
+        const temAudioArquivo  = inputAudio.files && inputAudio.files.length > 0;
+        const temAudioGravado  = blocosAudioGravado.length > 0;
+        const temAudio         = temAudioArquivo || temAudioGravado;
 
         if (!temFotos && !temAudio) {
             mostrarErro('Selecione pelo menos uma imagem das anotações ou o áudio da reunião.');
             return;
         }
 
-        // Monta FormData com a chave correta "imagens" (plural) para o FastAPI
-        const formData = new FormData();
-        listaImagens.forEach(img => formData.append('imagens', img));
-        if (temAudioArquivo) formData.append('audio', inputAudio.files[0]);
-        else if (temAudioGravado) formData.append('audio', new File([audioGravado], nomeAudioGravado, { type: audioGravado.type }));
-
         setLoadingState(true);
 
         try {
-            const response = await fetch('/api/gerar-ata', { method: 'POST', body: formData });
-            const data = await response.json();
+            // -------------------------------------------------------------------
+            // Caso A: audio gravado com possivel fracionamento em blocos
+            // -------------------------------------------------------------------
+            if (temAudioGravado) {
+                const totalBlocos = blocosAudioGravado.length;
 
-            if (!response.ok) {
-                throw new Error(data.detail || 'Ocorreu um erro ao processar a ata de reunião.');
+                if (totalBlocos === 1) {
+                    // --- Envio unico (gravacao curta <= 10 min) ---
+                    const formData = new FormData();
+                    listaImagens.forEach(img => formData.append('imagens', img));
+                    const nomeArq = `${nomeBaseAudioGravado}.wav`;
+                    formData.append('audio', new File([blocosAudioGravado[0]], nomeArq, { type: 'audio/wav' }));
+
+                    const response = await fetch('/api/gerar-ata', { method: 'POST', body: formData });
+                    const data     = await response.json();
+                    if (!response.ok) throw new Error(data.detail || 'Erro ao processar a ata.');
+
+                    ataGeradaTexto = data.ata;
+
+                } else {
+                    // --- Envio fracionado (reuniao longa > 10 min) ---
+                    // Envia cada bloco sequencialmente para o endpoint de blocos.
+                    // O servidor acumula e processa ao receber o bloco final.
+                    let ataFinal = '';
+                    for (let i = 0; i < totalBlocos; i++) {
+                        setLoadingState(true, `Enviando bloco ${i + 1} de ${totalBlocos}...`);
+
+                        const formData = new FormData();
+                        // Imagens somente no primeiro bloco (evita reenvio redundante)
+                        if (i === 0) listaImagens.forEach(img => formData.append('imagens', img));
+
+                        const nomeBloco = `${nomeBaseAudioGravado}_bloco${String(i + 1).padStart(2, '0')}.wav`;
+                        formData.append('audio',         new File([blocosAudioGravado[i]], nomeBloco, { type: 'audio/wav' }));
+                        formData.append('bloco_atual',   String(i + 1));
+                        formData.append('total_blocos',  String(totalBlocos));
+                        formData.append('duracao_total', String(duracaoAudioGravado));
+
+                        const response = await fetch('/api/gerar-ata-bloco', { method: 'POST', body: formData });
+                        const data     = await response.json();
+                        if (!response.ok) throw new Error(data.detail || `Erro no bloco ${i + 1}.`);
+
+                        // O servidor retorna a ata somente ao receber o ultimo bloco
+                        if (data.ata) ataFinal = data.ata;
+                    }
+                    ataGeradaTexto = ataFinal;
+                }
+
+            // -------------------------------------------------------------------
+            // Caso B: audio importado via arquivo (upload manual) ou somente fotos
+            // -------------------------------------------------------------------
+            } else {
+                const formData = new FormData();
+                listaImagens.forEach(img => formData.append('imagens', img));
+                if (temAudioArquivo) formData.append('audio', inputAudio.files[0]);
+
+                const response = await fetch('/api/gerar-ata', { method: 'POST', body: formData });
+                const data     = await response.json();
+                if (!response.ok) throw new Error(data.detail || 'Ocorreu um erro ao processar a ata de reunião.');
+
+                ataGeradaTexto = data.ata;
             }
 
-            ataGeradaTexto = data.ata;
             renderizarAta(ataGeradaTexto);
             resultCard.style.display = 'flex';
             resultCard.scrollIntoView({ behavior: 'smooth' });
@@ -310,10 +399,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    function setLoadingState(isLoading) {
+                            /**
+     * Atualiza o estado visual do botao principal de geracao.
+     * @param {boolean} isLoading
+     * @param {string}  [mensagem] Mensagem customizada exibida durante o loading
+     */
+    function setLoadingState(isLoading, mensagem = '') {
         btnGerar.disabled = isLoading;
         btnText.textContent = isLoading
-            ? 'Processando com AtaGenius AI...'
+            ? (mensagem || 'Processando com AtaGenius AI...')
             : '⚡ Gerar Ata com AtaGenius';
         spinner.style.display = isLoading ? 'inline-block' : 'none';
     }
@@ -461,16 +555,18 @@ document.addEventListener('DOMContentLoaded', () => {
             inputFoto.value = '';
             atualizarGaleria();
 
-            // Limpa audio (arquivo e gravado)
+                        // Limpa audio (arquivo e gravado)
             inputAudio.value = '';
             previewAudio.style.display = 'none';
             dropzoneAudio.classList.remove('active');
-            audioGravado     = null;
-            nomeAudioGravado = '';
+            blocosAudioGravado   = [];
+            nomeBaseAudioGravado = '';
+            duracaoAudioGravado  = 0;
             gravarStatus.textContent = '';
             gravarStatus.className   = 'gravar-status';
             gravarTimer.style.display = 'none';
             if (gravador.gravando) gravador.cancelar();
+            btnGravar.disabled = false;
             btnGravar.classList.remove('gravando');
             gravarLabel.textContent = 'Gravar Reunião';
 
