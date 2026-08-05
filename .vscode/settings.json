@@ -10,7 +10,10 @@
     "**/.venv-1/**",
     "**/site-packages/**",
     "**/.ruff_cache",
-    "**/__pycache__"
+    "**/__pycache__",
+    "**/node_modules",
+    "**/node_modules/**",
+    "**/.*"
   ],
   "python.analysis.typeCheckingMode": "basic",
   "python.analysis.diagnosticMode": "workspace",
