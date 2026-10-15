@@ -1,4 +1,5 @@
 import contextlib
+import logging
 import os
 import struct
 import time
@@ -8,73 +9,41 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-# ---------------------------------------------------------------------------
-# ATA DE DEMONSTRAÇÃO — exibida automaticamente quando a cota da API
-# Gemini estiver esgotada (erro 429 / RESOURCE_EXHAUSTED)
-# ---------------------------------------------------------------------------
-_ATA_DEMONSTRACAO = """
-> ⚠️ **[MODO DE DEMONSTRAÇÃO / TESTE]** — A cota gratuita da API Gemini está
-> temporariamente pausada. Esta ata é um exemplo gerado localmente para que
-> você possa testar o layout, copiar e imprimir sem perda de funcionalidade.
-
----
-
-# ATA DA REUNIÃO DE PLANEJAMENTO ESTRATÉGICO Q3
-
-**1. DATA, HORÁRIO E LOCAL:**
-- **Data:** 23 de julho de 2026
-- **Horário de Início:** 14h00 | **Término:** 16h30
-- **Local/Plataforma:** Sala de Reuniões "Inovação" — Sede Corporativa, São Paulo/SP
-
-**2. CONVOCAÇÃO E PRESENÇAS:**
-- **Presidente da Mesa:** Dr. Carlos Eduardo Mendonça — Diretor Executivo (CPF 123.456.789-00)
-- **Secretário(a):** Ana Paula Ferreira — Gerente de Planejamento
-- **Participantes Presentes:**
-  1. Marcos Vinícius Costa — Diretor Financeiro
-  2. Juliana Rezende — Gerente de Produto
-  3. Rafael Teixeira — Tech Lead
-  4. Fernanda Lima — Designer de Experiência
-
-**3. ORDEM DO DIA (PAUTA):**
-1. Revisão dos resultados do Q2 e análise de desvios orçamentários.
-2. Apresentação e aprovação do roadmap de produto para o Q3.
-3. Definição das metas de contratação e expansão de equipe.
-4. Encaminhamentos e próximos passos.
-
-**4. DELIBERAÇÕES E DISCUSSÕES:**
-Iniciada a sessão às quatorze horas, o Presidente da Mesa, Dr. Carlos Eduardo Mendonça, agradeceu a presença de todos e deu início à leitura da pauta.
-
-Quanto ao **primeiro ponto**, o Diretor Financeiro, Marcos Vinícius Costa, apresentou o relatório consolidado do Q2, constatando-se um desvio negativo de 8% na receita projetada, atribuído à postergação de dois contratos estratégicos. Deliberou-se pela criação de um comitê de acompanhamento comercial com reuniões quinzenais.
-
-No tocante ao **segundo ponto**, a Gerente de Produto Juliana Rezende apresentou o roadmap para o Q3, destacando o lançamento do módulo de relatórios avançados em agosto e a integração com a API de pagamentos em setembro. O roadmap foi aprovado por unanimidade.
-
-Em relação ao **terceiro ponto**, discutiu-se a necessidade de contratação de dois engenheiros sêniores e um analista de dados para suportar o crescimento previsto. O prazo para abertura das vagas ficou estabelecido em 30 dias.
-
-**5. PLANO DE AÇÃO E OBRIGAÇÕES:**
-
-| Item | Descrição da Ação / Compromisso | Responsável | Prazo Final |
-| :--- | :--- | :--- | :--- |
-| 1 | Constituir comitê de acompanhamento comercial e agendar primeira reunião | Marcos Costa | 30/07/2026 |
-| 2 | Publicar roadmap Q3 no sistema interno de gestão de projetos | Juliana Rezende | 25/07/2026 |
-| 3 | Abrir requisições de contratação para 2 engenheiros sêniores e 1 analista | Rafael Teixeira | 22/08/2026 |
-| 4 | Enviar ata para assinatura digital de todos os presentes | Ana Paula Ferreira | 26/07/2026 |
-
-**6. ENCERRAMENTO E LAVRATURA:**
-Nada mais havendo a tratar, a reunião foi encerrada às dezesseis horas e trinta minutos, do que se lavrou a presente ata que, lida e achada conforme, vai assinada pelos presentes para que surta seus efeitos legais e seja levada a registro perante o Cartório de Títulos e Documentos competente.
-
----
-**ASSINATURAS DOS PRESENTES:**
-
-_______________________________________
-Dr. Carlos Eduardo Mendonça — Presidente da Mesa
-
-_______________________________________
-Ana Paula Ferreira — Secretária
-"""
-
 from gemini_service import processar_ata_multimodal
 from image_service import comprimir_lista_imagens
 from supabase_service import SupabaseService
+
+logger = logging.getLogger(__name__)
+
+
+def _erro_geracao_ata(erro: Exception) -> HTTPException:
+    """Registra o detalhe técnico no servidor e devolve uma orientação segura ao usuário."""
+    mensagem = str(erro).lower()
+    logger.exception("Falha ao gerar ata com a API de inteligência artificial")
+
+    if any(termo in mensagem for termo in ("429", "quota", "resource exhausted", "rate limit", "limite de uso", "cota")):
+        return HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="O limite temporário de uso da inteligência artificial foi atingido. Aguarde alguns minutos e tente novamente.",
+        )
+
+    if any(termo in mensagem for termo in ("api key", "api_key", "gemini_api_key", "chave de api", "unauthenticated", "401", "permission denied", "invalida ou expirou")):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="A inteligência artificial está indisponível no momento. Tente novamente mais tarde ou avise o suporte.",
+        )
+
+    if any(termo in mensagem for termo in ("timeout", "timed out", "temporariamente indisponível", "temporariamente indisponivel", "404", "model not found")):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="A inteligência artificial está temporariamente indisponível. Aguarde um pouco e tente novamente.",
+        )
+
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Não foi possível gerar a ata agora. Confira os arquivos e tente novamente. Nenhuma ata foi gerada.",
+    )
+
 
 app = FastAPI(
     title="Gerador de Atas de Reunião com Gemini AI",
@@ -143,7 +112,7 @@ async def gerar_ata(
             except Exception as err:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Erro ao comprimir as imagens enviadas: {str(err)}"
+                    detail="Não foi possível ler uma das imagens. Confira se os arquivos são imagens válidas e tente novamente."
                 )
 
     # --- Processamento do Áudio ---
@@ -156,7 +125,7 @@ async def gerar_ata(
     if not lista_bytes_imagens and not bytes_audio:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="É necessário enviar pelo menos uma foto das anotações ou o áudio da reunião."
+            detail="Envie pelo menos uma foto válida das anotações ou o áudio da reunião para gerar a ata."
         )
 
     # --- Invocação do Serviço Gemini ---
@@ -166,11 +135,13 @@ async def gerar_ata(
             bytes_audio=bytes_audio,
             mime_audio=mime_audio,
         )
-    except Exception as _err:
-        print(f"[INFO] Fallback acionado — entregando ata de demonstração. Causa: {_err}")
-        return JSONResponse(
-            status_code=200,
-            content={"sucesso": True, "ata": _ATA_DEMONSTRACAO, "demonstracao": True}
+    except Exception as err:
+        raise _erro_geracao_ata(err) from err
+
+    if not isinstance(ata_markdown, str) or not ata_markdown.strip():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="A inteligência artificial não retornou uma ata. Tente novamente em alguns instantes.",
         )
 
     # --- Persistencia Opcional no Supabase (silenciosa — nao interrompe o fluxo) ---
@@ -264,7 +235,7 @@ async def gerar_ata_bloco(
             except Exception as err:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Erro ao comprimir imagens do bloco 1: {str(err)}"
+                    detail="Não foi possível ler uma das imagens. Confira se os arquivos são imagens válidas e tente novamente."
                 )
 
     # --- Aguarda o ultimo bloco para processar ---
@@ -310,11 +281,13 @@ async def gerar_ata_bloco(
             bytes_audio=bytes_audio_final,
             mime_audio=mime_audio_final,
         )
-    except Exception as _err:
-        print(f"[INFO] Fallback acionado (blocos) — ata de demonstracao. Causa: {_err}")
-        return JSONResponse(
-            status_code=200,
-            content={"sucesso": True, "ata": _ATA_DEMONSTRACAO, "demonstracao": True}
+    except Exception as err:
+        raise _erro_geracao_ata(err) from err
+
+    if not isinstance(ata_markdown, str) or not ata_markdown.strip():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="A inteligência artificial não retornou uma ata. Tente novamente em alguns instantes.",
         )
 
     # --- Persistencia opcional ---
