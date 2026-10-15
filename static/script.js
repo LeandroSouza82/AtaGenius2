@@ -307,6 +307,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     setupAudioHandler();
 
+    async function lerRespostaApi(response, mensagemPadrao) {
+        let data;
+        try {
+            data = await response.json();
+        } catch {
+            throw new Error(mensagemPadrao);
+        }
+
+        if (!response.ok) {
+            throw new Error(
+                typeof data.detail === 'string' && data.detail.trim()
+                    ? data.detail
+                    : mensagemPadrao
+            );
+        }
+        return data;
+    }
+
     // -----------------------------------------------------------------------
     // Gerar Ata — chamada ao backend
     // -----------------------------------------------------------------------
@@ -340,8 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     formData.append('audio', new File([blocosAudioGravado[0]], nomeArq, { type: 'audio/wav' }));
 
                     const response = await fetch('/api/gerar-ata', { method: 'POST', body: formData });
-                    const data     = await response.json();
-                    if (!response.ok) throw new Error(data.detail || 'Erro ao processar a ata.');
+                    const data = await lerRespostaApi(response, 'Não foi possível enviar os arquivos. Confira sua conexão e tente novamente.');
 
                     ataGeradaTexto = data.ata;
 
@@ -364,8 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         formData.append('duracao_total', String(duracaoAudioGravado));
 
                         const response = await fetch('/api/gerar-ata-bloco', { method: 'POST', body: formData });
-                        const data     = await response.json();
-                        if (!response.ok) throw new Error(data.detail || `Erro no bloco ${i + 1}.`);
+                        const data = await lerRespostaApi(response, `Não foi possível enviar o trecho ${i + 1} da gravação. Confira sua conexão e tente novamente.`);
 
                         // O servidor retorna a ata somente ao receber o ultimo bloco
                         if (data.ata) ataFinal = data.ata;
@@ -382,10 +398,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (temAudioArquivo) formData.append('audio', inputAudio.files[0]);
 
                 const response = await fetch('/api/gerar-ata', { method: 'POST', body: formData });
-                const data     = await response.json();
-                if (!response.ok) throw new Error(data.detail || 'Ocorreu um erro ao processar a ata de reunião.');
+                const data = await lerRespostaApi(response, 'Não foi possível enviar os arquivos. Confira sua conexão e tente novamente.');
 
                 ataGeradaTexto = data.ata;
+            }
+
+            if (typeof ataGeradaTexto !== 'string' || !ataGeradaTexto.trim()) {
+                throw new Error('A ata não foi gerada. Tente novamente em alguns instantes.');
             }
 
             renderizarAta(ataGeradaTexto);
@@ -393,7 +412,10 @@ document.addEventListener('DOMContentLoaded', () => {
             resultCard.scrollIntoView({ behavior: 'smooth' });
 
         } catch (err) {
-            mostrarErro(err.message || 'Falha de comunicação com o servidor.');
+            const mensagem = err instanceof TypeError || err instanceof SyntaxError
+                ? 'Não foi possível se comunicar com o servidor. Verifique sua internet e tente novamente.'
+                : (err.message || 'Ocorreu um erro inesperado. Tente novamente.');
+            mostrarErro(mensagem);
         } finally {
             setLoadingState(false);
         }
